@@ -60,6 +60,7 @@ def get_cancel_connect_keyboard():
 async def connect_account_cb(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text("Please send me your Jules API Key.", reply_markup=get_cancel_connect_keyboard())
     await state.set_state(ConfigState.waiting_for_api_key)
+    await state.update_data(prompt_msg_id=callback.message.message_id)
     await callback.answer()
 
 @dp.callback_query(F.data == "cancel_connect")
@@ -74,6 +75,18 @@ async def cancel_connect_cb(callback: CallbackQuery, state: FSMContext):
 
 @dp.message(ConfigState.waiting_for_api_key, F.chat.type == "private")
 async def process_api_key(message: Message, state: FSMContext):
+    data = await state.get_data()
+    prompt_msg_id = data.get("prompt_msg_id")
+    if prompt_msg_id:
+        try:
+            await message.bot.edit_message_reply_markup(
+                chat_id=message.chat.id,
+                message_id=prompt_msg_id,
+                reply_markup=None
+            )
+        except Exception:
+            pass
+
     await db.set_setting("api_key", message.text.strip())
     await message.answer("API Key saved! You can now proceed to setup a group.", reply_markup=get_start_keyboard())
     await state.clear()
