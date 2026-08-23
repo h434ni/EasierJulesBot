@@ -51,10 +51,25 @@ async def start_cmd(message: Message):
         reply_markup=get_start_keyboard()
     )
 
+def get_cancel_connect_keyboard():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Back", callback_data="cancel_connect")]
+    ])
+
 @dp.callback_query(F.data == "connect_account")
 async def connect_account_cb(callback: CallbackQuery, state: FSMContext):
-    await callback.message.answer("Please send me your Jules API Key.")
+    await callback.message.edit_text("Please send me your Jules API Key.", reply_markup=get_cancel_connect_keyboard())
     await state.set_state(ConfigState.waiting_for_api_key)
+    await callback.answer()
+
+@dp.callback_query(F.data == "cancel_connect")
+async def cancel_connect_cb(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.message.edit_text(
+        "Welcome to the Jules API Telegram Bot!\n\n"
+        "Use the buttons below to configure the bot.",
+        reply_markup=get_start_keyboard()
+    )
     await callback.answer()
 
 @dp.message(ConfigState.waiting_for_api_key, F.chat.type == "private")
