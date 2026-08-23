@@ -1,3 +1,4 @@
+import os
 import aiohttp
 from typing import Dict, Any, List, Optional
 
@@ -12,8 +13,15 @@ class JulesAPIClient:
         }
         self.session = None
 
+    def _get_connector(self):
+        proxy_url = os.environ.get("PROXY")
+        if proxy_url:
+            from aiohttp_socks import ProxyConnector
+            return ProxyConnector.from_url(proxy_url)
+        return None
+
     async def __aenter__(self):
-        self.session = aiohttp.ClientSession(headers=self.headers)
+        self.session = aiohttp.ClientSession(headers=self.headers, connector=self._get_connector())
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -23,7 +31,7 @@ class JulesAPIClient:
     async def _request(self, method: str, endpoint: str, **kwargs) -> Dict[str, Any]:
         url = f"{self.BASE_URL}/{endpoint}"
         if not self.session:
-            async with aiohttp.ClientSession(headers=self.headers) as session:
+            async with aiohttp.ClientSession(headers=self.headers, connector=self._get_connector()) as session:
                 return await self._do_request(session, method, url, **kwargs)
         else:
             return await self._do_request(self.session, method, url, **kwargs)

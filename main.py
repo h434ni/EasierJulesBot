@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import CommandStart, Command
@@ -7,6 +8,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.client.session.aiohttp import AiohttpSession
 
 from config import BOT_TOKEN
 from database.sqlite_db import SQLiteDatabase
@@ -14,7 +16,12 @@ from database.sqlite_db import SQLiteDatabase
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+bot_kwargs = {"token": BOT_TOKEN, "default": DefaultBotProperties(parse_mode=ParseMode.HTML)}
+proxy_url = os.environ.get("PROXY")
+if proxy_url:
+    bot_kwargs["session"] = AiohttpSession(proxy=proxy_url)
+
+bot = Bot(**bot_kwargs)
 dp = Dispatcher()
 db = SQLiteDatabase("bot.db")
 
