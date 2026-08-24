@@ -160,21 +160,23 @@ async def process_activity(bot: Bot, chat_id: int, topic_id: int, activity: dict
             if "changeSet" in art:
                 patch = art["changeSet"].get("gitPatch", {}).get("unidiffPatch", "")
                 if patch:
-                    # User requested: "i dont want the content of changes to be sent"
-                    # We skip sending the patch content, just send the commit message or short info
                     commit_msg = art["changeSet"].get("gitPatch", {}).get("suggestedCommitMessage", "Code changes generated")
-                    text += f"\n\n📝 **Code Changes Ready**\n_{commit_msg}_"
+                    if len(patch) > 3000:
+                        patch = patch[:3000] + "\n... (diff truncated)"
+                        
+                    text += f"\n\n📝 **Code Changes Ready**\n_{commit_msg}_\n"
+                    text += f"<details>\n<summary>View Changes</summary>\n\n```diff\n{patch}\n```\n</details>"
             elif "bashOutput" in art:
                 cmd = art["bashOutput"].get("command", "")
                 code = art["bashOutput"].get("exitCode", 0)
                 text += f"\n\n💻 **Command Executed:** `{cmd}`\nExit Code: {code}"
 
     try:
-        await bot.send_message(
+        from aiogram.types import InputRichMessage
+        await bot.send_rich_message(
             chat_id=chat_id,
             message_thread_id=topic_id,
-            text=text,
-            parse_mode="Markdown",
+            rich_message=InputRichMessage(markdown=text),
             disable_notification=not is_important
         )
     except Exception as e:
