@@ -28,12 +28,30 @@ db = SQLiteDatabase("bot.db")
 class ConfigState(StatesGroup):
     waiting_for_api_key = State()
 
-def get_start_keyboard():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Connect Account", callback_data="connect_account")],
-        [InlineKeyboardButton(text="Setup Group", callback_data="setup_group")],
-        [InlineKeyboardButton(text="New Task", callback_data="new_task")]
-    ])
+async def get_start_keyboard(bot: Bot, is_connected: bool = False, group_id: str = None):
+    connect_btn_text = "Account Connected ✅" if is_connected else "Connect Account"
+    group_btn_text = "Group Connected ✅" if group_id else "Setup Group"
+    
+    group_row = [InlineKeyboardButton(text=group_btn_text, callback_data="setup_group")]
+    if group_id:
+        try:
+            group_url = await bot.export_chat_invite_link(group_id)
+        except Exception as e:
+            logger.error(f"Failed to export chat invite link: {e}")
+            clean_id = str(group_id)
+            if clean_id.startswith("-100"):
+                clean_id = clean_id[4:]
+            group_url = f"https://t.me/c/{clean_id}/1"
+        group_row.append(InlineKeyboardButton(text="Open Group", url=group_url))
+
+    keyboard = [
+        [InlineKeyboardButton(text=connect_btn_text, callback_data="connect_account")],
+        group_row,
+    ]
+    if group_id:
+        keyboard.append([InlineKeyboardButton(text="New Task", callback_data="new_task")])
+        
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 @dp.message(CommandStart(), F.chat.type == "private")
 async def start_cmd(message: Message):
@@ -45,10 +63,14 @@ async def start_cmd(message: Message):
         await message.reply("Sorry, this bot is already claimed by another user.")
         return
 
+    api_key = await db.get_setting("api_key")
+    is_connected = bool(api_key)
+    group_id = await db.get_setting("group_id")
+
     await message.answer(
         "Welcome to the Jules API Telegram Bot!\n\n"
         "Use the buttons below to configure the bot.",
-        reply_markup=get_start_keyboard()
+        reply_markup=await get_start_keyboard(bot, is_connected, group_id)
     )
 
 def get_cancel_connect_keyboard():
@@ -66,10 +88,14 @@ async def connect_account_cb(callback: CallbackQuery, state: FSMContext):
 @dp.callback_query(F.data == "cancel_connect")
 async def cancel_connect_cb(callback: CallbackQuery, state: FSMContext):
     await state.clear()
+    api_key = await db.get_setting("api_key")
+    is_connected = bool(api_key)
+    group_id = await db.get_setting("group_id")
+
     await callback.message.edit_text(
         "Welcome to the Jules API Telegram Bot!\n\n"
         "Use the buttons below to configure the bot.",
-        reply_markup=get_start_keyboard()
+        reply_markup=await get_start_keyboard(bot, is_connected, group_id)
     )
     await callback.answer()
 
@@ -88,15 +114,17 @@ async def process_api_key(message: Message, state: FSMContext):
             pass
 
     await db.set_setting("api_key", message.text.strip())
-    await message.answer("API Key saved! You can now proceed to setup a group.", reply_markup=get_start_keyboard())
+    group_id = await db.get_setting("group_id")
+    await message.answer("API Key saved! You can now proceed to setup a group.", reply_markup=await get_start_keyboard(bot, is_connected=True, group_id=group_id))
     await state.clear()
 
 @dp.callback_query(F.data == "setup_group")
 async def setup_group_cb(callback: CallbackQuery):
     await db.set_setting("ready_for_group", "true")
-    await callback.message.answer(
+    await callback.message.edit_text(
         "Bot is now ready to be added to a group!\n\n"
-        "Please add me to a single group chat, and make sure the group has **Topics (Forum mode) enabled**."
+        "Please add me to a single group chat, and make sure the group has **Topics (Forum mode) enabled**.",
+        reply_markup=get_cancel_connect_keyboard()
     )
     await callback.answer()
 
