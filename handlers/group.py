@@ -55,11 +55,14 @@ async def bot_added_to_group(event: ChatMemberUpdated, bot: Bot, db: SQLiteDatab
 
     existing_group = await db.get_setting("group_id")
     if existing_group and existing_group != str(event.chat.id):
-        await bot.send_message(event.chat.id, "I am already setup in another group. Leaving...")
-        await bot.leave_chat(event.chat.id)
-        return
+        try:
+            await bot.send_message(existing_group, "I am being moved to another group by my owner. Goodbye!")
+            await bot.leave_chat(existing_group)
+        except Exception as e:
+            logger.error(f"Failed to leave old group {existing_group}: {e}")
 
     await db.set_setting("group_id", str(event.chat.id))
+    await db.set_setting("ready_for_group", "false")
     
     is_forum = getattr(event.chat, 'is_forum', False)
 
