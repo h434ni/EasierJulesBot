@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from aiogram import Bot, Dispatcher, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import CommandStart, Command
@@ -27,6 +28,14 @@ def get_start_keyboard():
         [InlineKeyboardButton(text="Setup Group", callback_data="setup_group")],
         [InlineKeyboardButton(text="New Task", callback_data="new_task")]
     ])
+
+@dp.message(Command("ping"))
+async def ping_command(message: Message):
+    start = time.time()
+    msg = await message.answer("ping")
+    end = time.time()
+    ping_time = int((end - start) * 1000)
+    await msg.edit_text(f"ping {ping_time}ms")
 
 @dp.message(CommandStart(), F.chat.type == "private")
 async def start_cmd(message: Message):
