@@ -144,10 +144,20 @@ async def new_task_cb(callback: CallbackQuery):
         # Insert into DB
         await db.create_topic(topic.message_thread_id)
 
-        # We also need to send the setup message to that new topic, but that can be handled
-        # by a function that sends the topic setup menu. We'll import it later or do it here.
         from handlers.topics import send_topic_setup_menu
         await send_topic_setup_menu(bot, int(group_id), topic.message_thread_id)
+
+        clean_id = str(group_id)
+        if clean_id.startswith("-100"):
+            clean_id = clean_id[4:]
+        topic_url = f"https://t.me/c/{clean_id}/{topic.message_thread_id}"
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="Go to Task ➔", url=topic_url)],
+            [InlineKeyboardButton(text="Back", callback_data="cancel_connect")]
+        ])
+
+        await callback.message.edit_text("new task created. go to task to continue", reply_markup=kb)
 
     except Exception as e:
         logger.error(f"Failed to create topic: {e}")
