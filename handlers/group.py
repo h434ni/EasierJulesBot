@@ -12,21 +12,22 @@ def get_admin_check_keyboard(bot_member, is_forum: bool = True):
     can_manage_topics = getattr(bot_member, 'can_manage_topics', False)
     can_pin_messages = getattr(bot_member, 'can_pin_messages', False)
 
-    if is_admin and can_manage_topics and can_pin_messages:
-        text = "Bot is Admin ✅"
-        cb_data = "admin_ok"
-    elif is_admin:
-        text = "Permissions missing ⚠️"
-        cb_data = "admin_missing_perms"
-    else:
-        text = "Bot is not Admin 🚫"
-        cb_data = "admin_not_admin"
+    keyboard = []
 
-    keyboard = [
-        [InlineKeyboardButton(text=text, callback_data=cb_data)]
-    ]
+    if not (is_admin and can_manage_topics and can_pin_messages):
+        if is_admin:
+            text = "Permissions missing ⚠️"
+            cb_data = "admin_missing_perms"
+        else:
+            text = "Bot is not Admin 🚫"
+            cb_data = "admin_not_admin"
+        keyboard.append([InlineKeyboardButton(text=text, callback_data=cb_data)])
+
     if not is_forum:
-        keyboard.append([InlineKeyboardButton(text="Forum not enabled 🚫", callback_data="forum_not_enabled")])
+        keyboard.append([InlineKeyboardButton(text="Topics not enabled 🚫", callback_data="forum_not_enabled")])
+
+    if not keyboard:
+        return None
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -108,5 +109,12 @@ async def admin_check_cb(callback: CallbackQuery, bot: Bot):
             await callback.answer(f"Missing permissions:\n" + "\n".join(missing), show_alert=True)
 
 @router.callback_query(F.data == "forum_not_enabled")
-async def forum_not_enabled_cb(callback: CallbackQuery):
-    await callback.answer("Please go to Group Settings -> Enable Topics.", show_alert=True)
+async def forum_not_enabled_cb(callback: CallbackQuery, bot: Bot):
+    chat = await bot.get_chat(callback.message.chat.id)
+    is_forum = getattr(chat, 'is_forum', False)
+    if is_forum:
+        bot_member = await bot.get_chat_member(callback.message.chat.id, bot.id)
+        await callback.message.edit_reply_markup(reply_markup=get_admin_check_keyboard(bot_member, is_forum=is_forum))
+        await callback.answer("Topics are now enabled!", show_alert=True)
+    else:
+        await callback.answer("Please go to Group Settings -> Enable Topics.", show_alert=True)
