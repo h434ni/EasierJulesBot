@@ -30,11 +30,15 @@ async def setup_type_cb(callback: CallbackQuery):
     setup_type = callback.data.split("_")[-1]
 
     state = setup_states.get(topic_id, {"setup_type": "new", "auto_pr": False})
+    if state.get("setup_type") == setup_type:
+        await callback.answer()
+        return
+
     state["setup_type"] = setup_type
     setup_states[topic_id] = state
 
-    await callback.message.delete()
-    await send_topic_setup_menu(callback.bot, callback.message.chat.id, topic_id, setup_type=state["setup_type"], auto_pr=state["auto_pr"])
+    from .topics import get_topic_setup_keyboard
+    await callback.message.edit_reply_markup(reply_markup=get_topic_setup_keyboard(setup_type=state["setup_type"], auto_pr=state["auto_pr"]))
     await callback.answer()
 
 @router.callback_query(F.data.startswith("toggle_pr_"))
@@ -47,8 +51,8 @@ async def toggle_pr_cb(callback: CallbackQuery):
     state["auto_pr"] = new_val
     setup_states[topic_id] = state
 
-    await callback.message.delete()
-    await send_topic_setup_menu(callback.bot, callback.message.chat.id, topic_id, setup_type=state["setup_type"], auto_pr=state["auto_pr"])
+    from .topics import get_topic_setup_keyboard
+    await callback.message.edit_reply_markup(reply_markup=get_topic_setup_keyboard(setup_type=state["setup_type"], auto_pr=state["auto_pr"]))
     await callback.answer()
 
 @router.callback_query(F.data == "cancel_setup")
@@ -289,8 +293,12 @@ async def select_session_cb(callback: CallbackQuery, bot: Bot, db: SQLiteDatabas
 async def back_to_setup_cb(callback: CallbackQuery):
     topic_id = callback.message.message_thread_id
     state = setup_states.get(topic_id, {"setup_type": "existing", "auto_pr": False})
-    await send_topic_setup_menu(callback.bot, callback.message.chat.id, topic_id, setup_type=state["setup_type"], auto_pr=state.get("auto_pr", False))
-    await callback.message.delete()
+    
+    from .topics import get_topic_setup_keyboard
+    await callback.message.edit_text(
+        "Please configure this topic:",
+        reply_markup=get_topic_setup_keyboard(setup_type=state["setup_type"], auto_pr=state.get("auto_pr", False))
+    )
 
 @router.callback_query(F.data.startswith("attach_"))
 async def attach_session_cb(callback: CallbackQuery, bot: Bot, db: SQLiteDatabase):
