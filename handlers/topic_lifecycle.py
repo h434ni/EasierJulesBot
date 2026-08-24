@@ -21,25 +21,10 @@ async def topic_created(message: Message, bot: Bot, db: SQLiteDatabase):
         return
 
     await db.create_topic(message.message_thread_id)
-    setup_states[message.message_thread_id] = {"setup_type": "new", "auto_pr": False}
-    await send_topic_setup_menu(bot, message.chat.id, message.message_thread_id, setup_type="new", auto_pr=False)
+    setup_states[message.message_thread_id] = {"auto_pr": False}
+    await send_topic_setup_menu(bot, message.chat.id, message.message_thread_id, auto_pr=False)
 
-@router.callback_query(F.data.startswith("setup_type_"))
-async def setup_type_cb(callback: CallbackQuery):
-    topic_id = callback.message.message_thread_id
-    setup_type = callback.data.split("_")[-1]
 
-    state = setup_states.get(topic_id, {"setup_type": "new", "auto_pr": False})
-    if state.get("setup_type") == setup_type:
-        await callback.answer()
-        return
-
-    state["setup_type"] = setup_type
-    setup_states[topic_id] = state
-
-    from .topics import get_topic_setup_keyboard
-    await callback.message.edit_reply_markup(reply_markup=get_topic_setup_keyboard(setup_type=state["setup_type"], auto_pr=state["auto_pr"]))
-    await callback.answer()
 
 @router.callback_query(F.data.startswith("toggle_pr_"))
 async def toggle_pr_cb(callback: CallbackQuery):
@@ -47,12 +32,12 @@ async def toggle_pr_cb(callback: CallbackQuery):
     current_val = bool(int(callback.data.split("_")[-1]))
     new_val = not current_val
 
-    state = setup_states.get(topic_id, {"setup_type": "new", "auto_pr": False})
+    state = setup_states.get(topic_id, {"auto_pr": False})
     state["auto_pr"] = new_val
     setup_states[topic_id] = state
 
     from .topics import get_topic_setup_keyboard
-    await callback.message.edit_reply_markup(reply_markup=get_topic_setup_keyboard(setup_type=state["setup_type"], auto_pr=state["auto_pr"]))
+    await callback.message.edit_reply_markup(reply_markup=get_topic_setup_keyboard(auto_pr=state["auto_pr"]))
     await callback.answer()
 
 @router.callback_query(F.data == "cancel_setup")
@@ -193,137 +178,16 @@ async def prompt_received(message: Message, bot: Bot, db: SQLiteDatabase):
         logger.error(f"Error creating session: {e}")
         await status_msg.edit_text(f"Error creating session: {e}")
 
-@router.callback_query(F.data == "proceed_setup_existing")
-async def proceed_existing_cb(callback: CallbackQuery, db: SQLiteDatabase):
-    topic_id = callback.message.message_thread_id
-    session_pages[topic_id] = [None]  # List of page tokens
-    await show_sessions_page(callback, db, 0)
-
-@router.callback_query(F.data.startswith("page_"))
-async def page_sessions_cb(callback: CallbackQuery, db: SQLiteDatabase):
-    page_index = int(callback.data[5:])
-    await show_sessions_page(callback, db, page_index)
-
-async def show_sessions_page(callback: CallbackQuery, db: SQLiteDatabase, page_index: int):
-    topic_id = callback.message.message_thread_id
-    api_key = await db.get_setting("api_key")
-    if not api_key:
-        await callback.answer("API Key not found.", show_alert=True)
-        return
-
-    tokens = session_pages.get(topic_id, [None])
-    page_token = tokens[page_index] if page_index < len(tokens) else None
-
-    client = JulesAPIClient(api_key)
-    try:
-        sessions_data = await client.list_sessions(page_size=10, page_token=page_token)
-        sessions = sessions_data.get("sessions", [])
-        next_token = sessions_data.get("nextPageToken")
-
-        if not sessions:
-            if page_index == 0:
-                await callback.answer("No sessions found.", show_alert=True)
-            else:
-                await callback.answer("No more sessions.", show_alert=True)
-            return
-
-        if next_token and len(tokens) == page_index + 1:
-            tokens.append(next_token)
-
-        session_pages[topic_id] = tokens
-
-        kb = []
-        for s in sessions:
-            title = s.get("title", s.get("id", "Unknown"))
-            state = s.get("state", "")
-            kb.append([InlineKeyboardButton(text=f"[{state}] {title}", callback_data=f"select_sess_{s['name']}")])
-
-        nav_row = []
-        if page_index > 0:
-            nav_row.append(InlineKeyboardButton(text="⬅️ Prev", callback_data=f"page_{page_index-1}"))
-        if next_token:
-            nav_row.append(InlineKeyboardButton(text="Next ➡️", callback_data=f"page_{page_index+1}"))
-
-        if nav_row:
-            kb.append(nav_row)
-
-        kb.append([InlineKeyboardButton(text="Back", callback_data="back_to_setup")])
-
-        await callback.message.edit_text("Select an existing session:", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb))
-    except Exception as e:
-        logger.error(f"Error fetching sessions: {e}")
-        await callback.answer("Error fetching sessions.", show_alert=True)
-
-@router.callback_query(F.data.startswith("select_sess_"))
-async def select_session_cb(callback: CallbackQuery, bot: Bot, db: SQLiteDatabase):
-    session_id = callback.data[12:]
-    topic_id = callback.message.message_thread_id
-
-    existing_topic = await db.get_topic_by_session(session_id)
-    if existing_topic and existing_topic["topic_id"] != topic_id:
-        await callback.answer("This session is already attached to another topic.", show_alert=True)
-        return
-
-    state = setup_states.get(topic_id, {"setup_type": "existing", "auto_pr": False})
-    state["selected_session"] = session_id
-    setup_states[topic_id] = state
-
-    await callback.answer("Session selected!")
-
-    btn_new = InlineKeyboardButton(text=f"New session", callback_data="setup_type_new")
-    btn_existing = InlineKeyboardButton(text=f"✅ Attach existing", callback_data="setup_type_existing")
-    btn_auto_pr = InlineKeyboardButton(text=f"Auto PR: {'ON' if state.get('auto_pr') else 'OFF'}", callback_data=f"toggle_pr_{int(state.get('auto_pr', False))}")
-    btn_proceed = InlineKeyboardButton(text="Proceed ➔", callback_data=f"attach_{session_id}")
-    btn_cancel = InlineKeyboardButton(text="Cancel / Delete Topic", callback_data="cancel_setup")
-
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [btn_new, btn_existing],
-        [btn_auto_pr],
-        [btn_proceed],
-        [btn_cancel]
-    ])
-
-    await callback.message.edit_text(
-        f"Selected Session: `{session_id}`\n\nPlease proceed.",
-        reply_markup=keyboard,
-        parse_mode="Markdown"
-    )
 
 @router.callback_query(F.data == "back_to_setup")
 async def back_to_setup_cb(callback: CallbackQuery):
     topic_id = callback.message.message_thread_id
-    state = setup_states.get(topic_id, {"setup_type": "existing", "auto_pr": False})
+    state = setup_states.get(topic_id, {"auto_pr": False})
     
     from .topics import get_topic_setup_keyboard
     await callback.message.edit_text(
         "Please configure this topic:",
-        reply_markup=get_topic_setup_keyboard(setup_type=state["setup_type"], auto_pr=state.get("auto_pr", False))
+        reply_markup=get_topic_setup_keyboard(auto_pr=state.get("auto_pr", False))
     )
 
-@router.callback_query(F.data.startswith("attach_"))
-async def attach_session_cb(callback: CallbackQuery, bot: Bot, db: SQLiteDatabase):
-    session_id = callback.data[7:]
-    topic_id = callback.message.message_thread_id
 
-    existing_topic = await db.get_topic_by_session(session_id)
-    if existing_topic and existing_topic["topic_id"] != topic_id:
-        await callback.answer("This session is already attached to another topic.", show_alert=True)
-        return
-
-    await db.update_topic_session(topic_id, session_id)
-
-    api_key = await db.get_setting("api_key")
-    client = JulesAPIClient(api_key)
-    session_data = await client.get_session(session_id)
-
-    pinned_msg = await bot.send_message(
-        chat_id=callback.message.chat.id,
-        message_thread_id=topic_id,
-        text=f"📌 **Session Attached**\nSession ID: `{session_id}`\nState: `{session_data.get('state', 'UNKNOWN')}`",
-        parse_mode="Markdown"
-    )
-    await bot.pin_chat_message(callback.message.chat.id, pinned_msg.message_id)
-    await db.update_topic_pinned_message(topic_id, pinned_msg.message_id)
-
-    await callback.message.delete()
-    setup_states.pop(topic_id, None)
