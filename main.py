@@ -123,6 +123,7 @@ async def setup_group_cb(callback: CallbackQuery):
     await db.set_setting("ready_for_group", "true")
     await callback.message.edit_text(
         "Bot is now ready to be added to a group!\n\n"
+        "(If you are moving me to a new group, I will try to leave the old one automatically. If I fail, please remove me manually.)\n\n"
         "Please add me to a single group chat, and make sure the group has **Topics (Forum mode) enabled**.",
         reply_markup=get_cancel_connect_keyboard()
     )
