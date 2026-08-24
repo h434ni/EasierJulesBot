@@ -41,13 +41,42 @@ async def poll_activities(bot: Bot, db: SQLiteDatabase):
                             # We don't have the repo name directly from session response usually,
                             # but title has it or we can just show title.
                             title = session_data.get("title", session_id)
-                            new_text = f"📌 **Session Active**\nTitle: `{title}`\nState: `{state}`"
+                            clean_id = session_id.split("/")[-1]
+                            jules_url = session_data.get("url", f"https://jules.google.com/session/{clean_id}")
+                            
+                            auto_pr_str = "`ON`" if session_data.get("automationMode") == "AUTO_CREATE_PR" else "`OFF`"
+                            state_emoji = {"QUEUED": "⏳", "PLANNING": "🧠", "AWAITING_PLAN_APPROVAL": "✋", "AWAITING_USER_FEEDBACK": "💬", "IN_PROGRESS": "🔄", "PAUSED": "⏸️", "FAILED": "❌", "COMPLETED": "✅"}.get(state, "🔵")
+                            
+                            outputs = session_data.get("outputs", [])
+                            pr_url = None
+                            for out in outputs:
+                                if "pullRequest" in out and "url" in out["pullRequest"]:
+                                    pr_url = out["pullRequest"]["url"]
+                                    break
+                            
+                            from aiogram.types import InputRichMessage, InlineKeyboardMarkup, InlineKeyboardButton
+                            
+                            pr_button = InlineKeyboardButton(text="View PR", url=pr_url) if pr_url else InlineKeyboardButton(text="No PR", callback_data="no_pr_alert")
+                            kb = InlineKeyboardMarkup(inline_keyboard=[
+                                [
+                                    InlineKeyboardButton(text="Open Session", url=jules_url),
+                                    pr_button
+                                ]
+                            ])
+                            
+                            rich_md = f"""
+# {title}
+
+| **Status** | **Auto PR** | **State** |
+|:---|:---|:---|
+| `Active` | {auto_pr_str} | {state_emoji} `{state}` |
+"""
                             # Ideally we only update if changed, but we can catch "message is not modified" exceptions
                             await bot.edit_message_text(
                                 chat_id=group_id,
                                 message_id=pinned_msg_id,
-                                text=new_text,
-                                parse_mode="Markdown"
+                                rich_message=InputRichMessage(markdown=rich_md),
+                                reply_markup=kb
                             )
                         except Exception as edit_err:
                             if "message is not modified" not in str(edit_err).lower():

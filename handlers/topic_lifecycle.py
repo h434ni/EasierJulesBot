@@ -162,11 +162,32 @@ async def prompt_received(message: Message, bot: Bot, db: SQLiteDatabase):
         await db.update_topic_auto_pr(topic_id, auto_pr)
 
         short_repo = repo_name.split("/")[-1].replace("github-", "")
-        pinned_msg = await bot.send_message(
+        clean_id = session_id.split("/")[-1]
+        jules_url = session_data.get("url", f"https://jules.google.com/session/{clean_id}")
+
+        auto_pr_str = "`ON`" if auto_pr else "`OFF`"
+        state_str = session_data.get('state', 'QUEUED')
+        state_emoji = {"QUEUED": "⏳", "PLANNING": "🧠", "AWAITING_PLAN_APPROVAL": "✋", "AWAITING_USER_FEEDBACK": "💬", "IN_PROGRESS": "🔄", "PAUSED": "⏸️", "FAILED": "❌", "COMPLETED": "✅"}.get(state_str, "🔵")
+        
+        from aiogram.types import InputRichMessage, InlineKeyboardMarkup, InlineKeyboardButton
+        rich_md = f"""
+# {session_id}
+
+| **Status** | **Auto PR** | **Repo** | **Branch** | **State** |
+|:---|:---|:---|:---|:---|
+| `Active` | {auto_pr_str} | `{short_repo}` | `{branch_name}` | {state_emoji} `{state_str}` |
+"""
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="Open Session", url=jules_url),
+                InlineKeyboardButton(text="No PR", callback_data="no_pr_alert")
+            ]
+        ])
+        pinned_msg = await bot.send_rich_message(
             chat_id=message.chat.id,
             message_thread_id=topic_id,
-            text=f"📌 **Session Active**\nSession ID: `{session_id}`\nRepo: `{short_repo}`\nBranch: `{branch_name}`\nState: `{session_data.get('state', 'QUEUED')}`",
-            parse_mode="Markdown"
+            rich_message=InputRichMessage(markdown=rich_md),
+            reply_markup=kb
         )
         await bot.pin_chat_message(message.chat.id, pinned_msg.message_id)
         await db.update_topic_pinned_message(topic_id, pinned_msg.message_id)
@@ -177,6 +198,11 @@ async def prompt_received(message: Message, bot: Bot, db: SQLiteDatabase):
     except Exception as e:
         logger.error(f"Error creating session: {e}")
         await status_msg.edit_text(f"Error creating session: {e}")
+
+
+@router.callback_query(F.data == "no_pr_alert")
+async def no_pr_alert_cb(callback: CallbackQuery):
+    await callback.answer("There is no PR yet.", show_alert=True)
 
 
 @router.callback_query(F.data == "back_to_setup")
