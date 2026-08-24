@@ -60,8 +60,7 @@ async def poll_activities(bot: Bot, db: SQLiteDatabase):
                 try:
                     activities_res = await client.list_activities(
                         session_id=session_id,
-                        page_size=20,
-                        create_time=last_time
+                        page_size=20
                     )
 
                     activities = activities_res.get("activities", [])

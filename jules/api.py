@@ -107,7 +107,7 @@ class JulesAPIClient:
             endpoint = f"sessions/{session_id}:sendMessage"
         return await self._request("POST", endpoint, json={"prompt": message})
 
-    async def list_activities(self, session_id: str, page_size: int = 50, page_token: Optional[str] = None, create_time: Optional[str] = None) -> Dict[str, Any]:
+    async def list_activities(self, session_id: str, page_size: int = 50, page_token: Optional[str] = None) -> Dict[str, Any]:
         if session_id.startswith("sessions/"):
             endpoint = f"{session_id}/activities"
         else:
@@ -116,7 +116,5 @@ class JulesAPIClient:
         params = {"pageSize": page_size}
         if page_token:
             params["pageToken"] = page_token
-        if create_time:
-            params["createTime"] = create_time
 
         return await self._request("GET", endpoint, params=params)
