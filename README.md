@@ -2,7 +2,7 @@
 
 using the power of Jules API, this bot allows to do finish tasks directly in telegram.
 
-to make tasks separated, each task automatically gets linked to a separate group topic
+to make tasks separated, a new topic gets created for each one
 
 ## Setup
 
