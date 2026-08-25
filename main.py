@@ -173,7 +173,19 @@ import asyncio
 async def main():
     await db.connect()
 
-    # We will register other handlers here
+    # Dynamic Plugin Discovery
+    import importlib
+    if os.path.exists("plugins"):
+        for filename in os.listdir("plugins"):
+            if filename.endswith(".py") and not filename.startswith("__"):
+                module_name = f"plugins.{filename[:-3]}"
+                try:
+                    module = importlib.import_module(module_name)
+                    if hasattr(module, "setup_plugin"):
+                        module.setup_plugin(dp, bot)
+                        logger.info(f"Loaded plugin: {module_name}")
+                except Exception as e:
+                    logger.error(f"Failed to load plugin {module_name}: {e}")
 
     try:
         asyncio.create_task(poll_activities(bot, db))
