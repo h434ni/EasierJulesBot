@@ -6,4 +6,4 @@
 
 # Workspace Rules
 
-- **Temporary Files**: When creating scratch scripts, API test scripts, or any temporary files in the workspace to test functionality, always place them inside the `./.temp/` directory to avoid cluttering the project root.
+- **Temporary Files**: When creating scratch scripts, API test scripts, or any temporary files, ALWAYS place them strictly inside the **current working directory's** `./.temp/` folder. Do NOT place them in the global `~/Temp` folder, the parent directory, or the project root.
