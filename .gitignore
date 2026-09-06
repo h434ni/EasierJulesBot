@@ -220,3 +220,4 @@ __marimo__/
 #mine
 bot.db
 .temp/
+node_modules/
