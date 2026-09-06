@@ -44,11 +44,16 @@ export class FSMContext {
 }
 
 export class Router {
+  private middlewares: ((u: Update, next: () => Promise<void>) => Promise<void>)[] = [];
   private messageRoutes: Route[] = [];
   private callbackRoutes: Route[] = [];
   private stateRoutes: Route[] = [];
 
   private genericRoutes: { filter: (u: Update) => boolean, handler: (u: Update) => Promise<void> }[] = [];
+
+  use(middleware: (u: Update, next: () => Promise<void>) => Promise<void>) {
+    this.middlewares.push(middleware);
+  }
 
   onCommand(command: string, handler: MessageHandler) {
     this.messageRoutes.push({ command, handler });
@@ -67,54 +72,65 @@ export class Router {
   }
 
   async handleUpdate(update: Update) {
-    // Run generic routes
-    for (const route of this.genericRoutes) {
-      if (route.filter(update)) {
-        await route.handler(update);
-        // Do not return here so it can cascade if necessary, or we can decide to return early.
+    const runRoutes = async () => {
+      // Run generic routes
+      for (const route of this.genericRoutes) {
+        if (route.filter(update)) {
+          await route.handler(update);
+        }
       }
-    }
 
-    if (update.message) {
-      const msg = update.message;
-      const userId = msg.from?.id;
-      if (userId) {
-        const fsm = new FSMContext(userId);
-        const currentState = fsm.getState();
+      if (update.message) {
+        const msg = update.message;
+        const userId = msg.from?.id;
+        if (userId) {
+          const fsm = new FSMContext(userId);
+          const currentState = fsm.getState();
 
-        if (currentState) {
-          const route = this.stateRoutes.find(r => r.state === currentState);
+          if (currentState) {
+            const route = this.stateRoutes.find(r => r.state === currentState);
+            if (route) {
+              await (route.handler as MessageHandler)(msg, fsm);
+              return;
+            }
+          }
+        }
+
+        if (msg.text?.startsWith('/')) {
+          const cmd = msg.text.split(' ')[0].substring(1);
+          const route = this.messageRoutes.find(r => r.command === cmd);
           if (route) {
+            const fsm = new FSMContext(msg.from!.id);
             await (route.handler as MessageHandler)(msg, fsm);
             return;
           }
         }
       }
 
-      if (msg.text?.startsWith('/')) {
-        const cmd = msg.text.split(' ')[0].substring(1);
-        const route = this.messageRoutes.find(r => r.command === cmd);
-        if (route) {
-          const fsm = new FSMContext(msg.from!.id);
-          await (route.handler as MessageHandler)(msg, fsm);
-          return;
+      if (update.callback_query) {
+        const cb = update.callback_query;
+        const userId = cb.from.id;
+        const fsm = new FSMContext(userId);
+
+        const data = cb.data;
+        if (data) {
+          const route = this.callbackRoutes.find(r => data.startsWith(r.callbackDataPrefix!));
+          if (route) {
+            await (route.handler as CallbackQueryHandler)(cb, fsm);
+          }
         }
       }
-    }
+    };
 
-    if (update.callback_query) {
-      const cb = update.callback_query;
-      const userId = cb.from.id;
-      const fsm = new FSMContext(userId);
-
-      const data = cb.data;
-      if (data) {
-        const route = this.callbackRoutes.find(r => data.startsWith(r.callbackDataPrefix!));
-        if (route) {
-          await (route.handler as CallbackQueryHandler)(cb, fsm);
-        }
+    const dispatch = async (index: number): Promise<void> => {
+      if (index < this.middlewares.length) {
+        await this.middlewares[index](update, () => dispatch(index + 1));
+      } else {
+        await runRoutes();
       }
-    }
+    };
+
+    await dispatch(0);
   }
 }
 

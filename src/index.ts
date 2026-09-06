@@ -9,8 +9,34 @@ if (process.env.http_proxy || process.env.https_proxy || process.env.HTTP_PROXY 
   setGlobalDispatcher(new EnvHttpProxyAgent());
 }
 
+import { DB } from './db';
+import { callApi } from './api';
+
 async function bootstrap() {
   console.log('Starting bot...');
+
+  router.use(async (update, next) => {
+    let chat;
+    if (update.message) chat = update.message.chat;
+    else if (update.callback_query?.message) chat = update.callback_query.message.chat;
+    else if (update.my_chat_member) chat = update.my_chat_member.chat;
+    else if (update.edited_message) chat = update.edited_message.chat;
+
+    if (chat && ['group', 'supergroup'].includes(chat.type)) {
+      const groupId = DB.getSetting("group_id");
+      const readyForGroup = DB.getSetting("ready_for_group");
+      
+      // If this chat is not the authorized group, AND we aren't currently waiting to be added to a group
+      if (String(chat.id) !== groupId && readyForGroup !== "true") {
+        try {
+          await callApi('sendMessage', { chat_id: chat.id, text: "I am only authorized to operate in my officially configured group. Leaving..." });
+          await callApi('leaveChat', { chat_id: chat.id });
+        } catch (e) {}
+        return; // Drop update completely
+      }
+    }
+    await next();
+  });
 
   // Load all handlers dynamically from the handlers directory
   const handlersPath = path.resolve(__dirname, 'handlers');
